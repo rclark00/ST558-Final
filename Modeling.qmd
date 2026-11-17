@@ -46,3 +46,44 @@ bank_rec
 # Metrics to evaluate models: log loss and accuracy
 bank_metrics <- metric_set(mn_log_loss, accuracy)
 ```
+
+
+
+```{r}
+# Fit a tree with a given cost_complexity, return log loss
+tree_train_loss <- function(cp) {
+  tree_spec <- decision_tree(cost_complexity = cp) |>
+    set_engine("rpart") |>
+    set_mode("classification")
+
+  tree_fit <- workflow() |>
+    add_recipe(bank_rec) |>
+    add_model(tree_spec) |>
+    fit(bank_train)
+
+  predict(tree_fit, bank_train, type = "prob") |>
+    bind_cols(bank_train) |>
+    mn_log_loss(truth = y, .pred_no) |>
+    mutate(cost_complexity = cp)
+}
+```
+
+```{r}
+# Try multiple cost_complexity values and combine
+cp_values <- c(0.1, 0.01, 0.001, 0.0001, 0.00001)
+tree_results <- lapply(cp_values, tree_train_loss) |>
+  bind_rows()
+tree_results
+
+# Plot log loss 
+ggplot(tree_results, aes(x = factor(cost_complexity), y = .estimate)) +
+  geom_col() +
+  labs(x = "cost_complexity", y = "Log loss")
+```
+
+```{r}
+# Pick lowest log loss
+tree_best <- tree_results |>
+  filter(.estimate == min(.estimate))
+tree_best
+```
