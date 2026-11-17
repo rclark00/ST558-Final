@@ -12,3 +12,7 @@
 /.quarto/
 *_cache/
 **/*.quarto_ipynb
+
+# Docker image export
+*.tar
+*.tar.gz

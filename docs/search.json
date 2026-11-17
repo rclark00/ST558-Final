@@ -1,0 +1,9 @@
+[
+  {
+    "objectID": "Modeling.html",
+    "href": "Modeling.html",
+    "title": "ST 558 Final Project",
+    "section": "",
+    "text": "library(tidyverse)\n\nbank &lt;- read_delim(\"data/train.csv\", delim = \";\")\ndim(bank)\n\n[1] 45211    17"
+  }
+]

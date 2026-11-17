@@ -1,0 +1,13 @@
+---
+title: "ST 558 Final Project"
+author: Ryan Clark
+format: html
+---
+
+```{r}
+#| message: false
+library(tidyverse)
+
+bank <- read_delim("data/train.csv", delim = ";")
+dim(bank)
+```
