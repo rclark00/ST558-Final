@@ -7,7 +7,42 @@ format: html
 ```{r}
 #| message: false
 library(tidyverse)
+library(tidymodels)
 
-bank <- read_delim("data/train.csv", delim = ";")
-dim(bank)
+bank <- read_delim("data/train.csv", delim = ";") |>
+  select(y, age, balance, campaign, housing, contact, poutcome) |>
+  mutate(across(where(is.character), as.factor))
+bank
+```
+
+```{r}
+# Subscription counts
+bank |>
+  count(y) |>
+  mutate(pct = round(100 * n / sum(n), 1))
+```
+
+Response is not balanced. Relevant for choosing metric and splitting data.
+
+```{r}
+# Split data 70/30, keeping same proportion of "yes" in each set
+set.seed(558)
+bank_split <- initial_split(bank, prop = 0.7, strata = y)
+bank_train <- training(bank_split)
+bank_test <- testing(bank_split)
+bank_split
+
+# 5 CV folds from training data
+bank_folds <- vfold_cv(bank_train, v = 5)
+```
+
+```{r}
+# Recipe: y predicted by all 6 predictors
+bank_rec <- recipe(y ~ ., data = bank_train)
+bank_rec
+```
+
+```{r}
+# Metrics to evaluate models: log loss and accuracy
+bank_metrics <- metric_set(mn_log_loss, accuracy)
 ```
