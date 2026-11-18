@@ -47,43 +47,45 @@ bank_rec
 bank_metrics <- metric_set(mn_log_loss, accuracy)
 ```
 
-
+`cost_complexity` controls how much the tree gets pruned. It penalizes trees for having more leaves.  
 
 ```{r}
-# Fit a tree with a given cost_complexity, return log loss
-tree_train_loss <- function(cp) {
-  tree_spec <- decision_tree(cost_complexity = cp) |>
+# Classification tree model; only tune cost-complexity parameter
+tree_mod <- decision_tree(cost_complexity = tune()) |>
     set_engine("rpart") |>
     set_mode("classification")
 
-  tree_fit <- workflow() |>
+# Combine recipe and model into workflow
+tree_wkf <- workflow() |>
     add_recipe(bank_rec) |>
-    add_model(tree_spec) |>
-    fit(bank_train)
+    add_model(tree_mod)
 
-  predict(tree_fit, bank_train, type = "prob") |>
-    bind_cols(bank_train) |>
-    mn_log_loss(truth = y, .pred_no) |>
-    mutate(cost_complexity = cp)
-}
+# Tuning grid
+tree_grid <- grid_regular(cost_complexity(), levels = 10)
+```
+
+
+```{r}
+# Fit each grid value to the 5 CV folds
+tree_fits <- tree_wkf |>
+  tune_grid(resamples = bank_folds,
+            grid = tree_grid,
+            metrics = bank_metrics)
+
+# CV log loss for each value (best first)
+tree_fits |>
+  collect_metrics() |>
+  filter(.metric == "mn_log_loss") |>
+  arrange(mean)
 ```
 
 ```{r}
-# Try multiple cost_complexity values and combine
-cp_values <- c(0.1, 0.01, 0.001, 0.0001, 0.00001)
-tree_results <- lapply(cp_values, tree_train_loss) |>
-  bind_rows()
-tree_results
+# Best cost_complexity value by log loss
+tree_best_params <- select_best(tree_fits, metric = "mn_log_loss")
+tree_best_params
 
-# Plot log loss 
-ggplot(tree_results, aes(x = factor(cost_complexity), y = .estimate)) +
-  geom_col() +
-  labs(x = "cost_complexity", y = "Log loss")
+# Lock that value into the workflow
+tree_final_wkf <- tree_wkf |>
+  finalize_workflow(tree_best_params)
 ```
 
-```{r}
-# Pick lowest log loss
-tree_best <- tree_results |>
-  filter(.estimate == min(.estimate))
-tree_best
-```
