@@ -89,3 +89,48 @@ tree_final_wkf <- tree_wkf |>
   finalize_workflow(tree_best_params)
 ```
 
+Random Forest
+
+```{r}
+# Random forest model; tune mtry
+rf_mod <- rand_forest(mtry = tune()) |>
+  set_engine("ranger") |>
+  set_mode("classification")
+
+# Combine recipe and model into workflow
+rf_wkf <- workflow() |>
+  add_recipe(bank_rec) |>
+  add_model(rf_mod)
+
+# Tuning grid: try every mtry value
+rf_grid <- grid_regular(mtry(range = c(1, 6)), levels = 6)
+rf_grid
+```
+
+```{r}
+#| cache: true
+# Fit each grid value to the 5 CV folds
+set.seed(558)
+rf_fits <- rf_wkf |>
+  tune_grid(resamples = bank_folds,
+            grid = rf_grid,
+            metrics = bank_metrics)
+
+# CV log loss for each value (listing best first)
+rf_fits |>
+  collect_metrics() |>
+  filter(.metric == "mn_log_loss") |>
+  arrange(mean)
+```
+
+```{r}
+# Best mtry value by log loss
+rf_best_params <- select_best(rf_fits, metric = "mn_log_loss")
+rf_best_params
+
+# Use best for workflow
+rf_final_wkf <- rf_wkf |>
+  finalize_workflow(rf_best_params)
+```
+
+Best is mtry = 2 with log loss approximately 0.311, which surpasses baseline and best tree. 
