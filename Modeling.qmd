@@ -134,3 +134,49 @@ rf_final_wkf <- rf_wkf |>
 ```
 
 Best is mtry = 2 with log loss approximately 0.311, which surpasses baseline and best tree. 
+
+
+```{r}
+# Fit best tree to full training set and evaluate on test set
+tree_final_fit <- tree_final_wkf |>
+  last_fit(bank_split, metrics = bank_metrics)
+tree_final_fit |>
+  collect_metrics()
+```
+
+```{r}
+# Plot final tree
+tree_final_fit |>
+  extract_workflow() |>
+  extract_fit_engine() |>
+  rpart.plot::rpart.plot(roundint = FALSE)
+```
+
+```{r}
+#| cache: true
+# Fit best random forest to full training set and evaluate on test set
+set.seed(558)
+rf_final_fit <- rf_final_wkf |>
+  last_fit(bank_split, metrics = bank_metrics)
+rf_final_fit |>
+  collect_metrics()
+```
+
+```{r}
+# Compare both models on test set
+rbind(tree_final_fit |> collect_metrics(),
+      rf_final_fit |> collect_metrics()) |>
+  mutate(Model = c("Tree", "Tree", "Random Forest", "Random Forest")) |>
+  select(Model, everything())
+```
+
+Random forest is winner.
+
+```{r}
+#| cache: true
+# Fit random forest to the entire data set
+set.seed(558)
+bank_final_model <- rf_final_wkf |>
+  fit(bank)
+bank_final_model
+```
