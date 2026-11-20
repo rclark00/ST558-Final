@@ -15,4 +15,4 @@
 
 # Docker image export
 *.tar
-*.tar.gz
+*.tar.gz/Modeling_files/
