@@ -1,8 +1,34 @@
 ---
 title: "ST 558 Final Project"
 author: Ryan Clark
+date: 2026-12-03
+abstract: |
+  The purpose of this report is to fit and compare classification tree and random forest models that predict whether a bank client subscribes to a term deposit, then select the best model for use in an API.
 format: html
 ---
+
+## Introduction
+
+In this project we build on our exploratory analysis from Project 2 of the 'Banking Dataset - Marketing Targets' from Kaggle. The data come from a Portuguese bank's marketing campaign, in which clients were called and offered a term deposit. We define our response variable as `y`, which is whether the client subscribed to the term deposit (`yes` or `no`). Since `y` is categorical, this is a classification problem.
+
+Our goal is to predict whether a client will subscribe. Using the tidymodels framework, we fit a classification tree and a random forest. Each model is tuned with 5-fold cross-validation on a training set. We then compare the best version of each on a test set, and fit the winner to the entire data set. The API uses this final model to make predictions.
+
+We use six predictors; three numeric and three categorical. These are the following:
+
+- `age`: client's age (years)
+- `balance`: client's average yearly account balance (euros)
+- `campaign`: the number of contacts made with the client during this campaign
+- `housing`: if the client has a housing loan
+- `contact`: method of contact (`cellular`, `telephone`, or `unknown`)
+- `poutcome`: prior outcome of previous campaign (`success`, `failure`, `other`, or `unknown`)
+
+These predictors were chosen because they describe the client and their history with the bank, as well as findings from Project 2. Clients who were contacted in a previous campaign were more likely to subscribe, and subscribers tended to have higher balances and fewer contacts. 
+
+We do not include `duration`, or the length of the last call. While `duration` was strongly related to subscription in Project 2, this information doesn't aid in prediction because it's only known after the fact. We also exclude `month`, or the month of the last contact. Despite observing monthly patterns in Project 2, there are many potential confounding variables not analyzed that could inhibit future predictions.
+
+## Data
+
+We begin by reading in the data. In Project 2 we found that `test.csv` was a duplicate subset of `train.csv`, so here we use only `train.csv`, which contains all 45,211 unique clients. We keep only our response and six chosen predictors, and convert the character columns to factors so the models treat them as categories.
 
 ```{r}
 #| message: false
