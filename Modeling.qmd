@@ -89,7 +89,7 @@ A classification tree predicts a categorical response by dividing the predictor 
 
 The final groups are called terminal nodes, or leaves. We make a prediction for a new client by using their information to trace splits down the tree until hitting a leaf. The new client's predicted probability of subscribing is the proportion of training clients in that leaf who also subscribed. The predicted class is the majority class in the leaf.
 
-A potential pitfall of this method is to split too much and fit the training data too well. This is a problem because it will be fitting noise and end up with worse predictive power for new data. To prevent this, we grow a large tree and then prune it back using the `cost_complexity` parameter. This parameter adds a penalty for each additional leaf, so a split is only kept if it improves the fit by enough to make up for the extra complexity. Small values allow large, complex trees, while large values produce small, simple trees. Thus, `cost_complexity` is used as a tuning parameter to inform us about how much pruning is best for our classification tree.
+A potential pitfall of this method is to split too much and fit the training data too well. This is a problem because it will be fitting noise and end up with worse predictive power for new data. To prevent this, we grow a large tree and then prune it back using the `cost_complexity` parameter. This parameter adds a penalty for each additional leaf, so a split is only kept if it improves the fit by enough to make up for the extra complexity. Small values allow large, complex trees, while large values produce small, simple trees.  Thus, `cost_complexity` is used as a tuning parameter to inform us about how much pruning is best for our classification tree.
 
 There are many advantages to consider with classification trees. They excel in visualizing the process, handling numeric and categorical predictors, and automatically accounting for predictor interactions. Their main limitation is high variance. A small change in the data can lead to a very different tree, which can hurt prediction.
 
@@ -137,8 +137,21 @@ tree_final_wkf <- tree_wkf |>
   finalize_workflow(tree_best_params)
 ```
 
-We see that the best value is a `cost_complexity` of 0.01, with a cross-validation log loss of about 0.334. This is better than giving every client the same 11.7% chance, so the tree is making use of the predictors. Using this value in our workflow with `finalize_workflow()` provides our best classification tree.
+We see that the best value is a `cost_complexity` of 0.01, with a cross-validation log loss of about 0.334. This is better than giving every client the same 11.7% chance, so the tree is making use of the predictors. Using this value in our workflow with `finalize_workflow()` provides the best classification tree.
 
+## Random Forest
+
+We noted above that a single tree has high variance. One way to reduce variance is to fit many trees and average them. Since we only have one data set, we create new ones by bootstrapping. This means resampling the training data with replacement. We grow a tree on each bootstrap sample without pruning and average the predictions across all trees. Then for a new client, the predicted probability of subscribing is the average probability. This is called bagging (bootstrap aggregation). While individual trees may overfit, averaging removes much of that noise. This is also why we don't prune here, as pruning would make each tree simpler but less able to capture real patterns.
+
+Bagging is not without limitations. If one predictor is much stronger than the others, trees will tend to use it for their first split. This can start to make the trees look similar. And averaging similar trees doesn't combat the variance problem. This is where a random forest comes in. 
+
+A random forest forces a tree to use a random subset (of size `mtry`) of predictors at each split. With enough randomizations, this prevents the strong predictor from always being used for the first split because it will often be randomly removed from the subset. Therefore, this forces trees into situations where they must use other predictors, resulting in more different splits that we can then average to reduce variance further.
+
+However, there are tradeoffs associated with the choice of `mtry`. Small values mean smaller subsets to choose from, which produce very different trees. This helps averaging but extremely small values may force overutilization of useless predictors. Large values mean bigger subsets to choose from, which produce stronger, more similar trees. Eventually too large of `mtry` leads us back to the problem of bagging. We use cross-validation to find the best balance.
+
+Overall, a random forest usually predicts better than a single tree because it reduces variance. The cost is interpretability: the prediction comes from averaging hundreds of trees, so there is no single tree we can draw to explain the model.
+
+Thus, we design our random forest using `mtry` for tuning, merging it with our recipe in a workflow. Considering that we only have 6 predictors, our grid explores every possible value of `mtry` from 1 to 6.
 
 ```{r}
 # Random forest model; tune mtry
@@ -172,6 +185,8 @@ rf_fits |>
   arrange(mean)
 ```
 
+We fit the random forest at each `mtry` value on all 5 folds. 
+
 ```{r}
 # Best mtry value by log loss
 rf_best_params <- select_best(rf_fits, metric = "mn_log_loss")
@@ -182,8 +197,13 @@ rf_final_wkf <- rf_wkf |>
   finalize_workflow(rf_best_params)
 ```
 
-Best is mtry = 2 with log loss approximately 0.311, which surpasses baseline and best tree. 
+The best value is an `mtry` of 2, with a cross-validation log loss of roughly 0.311. This surpasses the best classification tree (which was 0.334). It's also interesting that `mtry` = 6 (i.e., bagging) performs the worst (log loss of 0.377). This is likely because `poutcome` is such a strong predictor that it forces the trees to resemble each other, illustrating the bagging limitation we discussed earlier. 
 
+Thus, limiting each split to 2 random predictors gives us more varied trees and better probabilities, so we fix `mtry` at 2 to our `finalize_workflow()`.
+
+## Final Model Selection
+
+We now have our best classification tree and our best random forest. Using `last_fit()`, we fit each model to the entire training set and evaluate it on the test set. Recall that neither model has seen the test set yet.
 
 ```{r}
 # Fit best tree to full training set and evaluate on test set
@@ -193,6 +213,8 @@ tree_final_fit |>
   collect_metrics()
 ```
 
+On the test set, the tree has a log loss of about 0.331 and accuracy of about 89.3%.
+
 ```{r}
 # Plot final tree
 tree_final_fit |>
@@ -200,6 +222,8 @@ tree_final_fit |>
   extract_fit_engine() |>
   rpart.plot::rpart.plot(roundint = FALSE)
 ```
+
+Pruning reduces our tree to one split: `poutcome`. It shows that clients whose previous campaign was a success (predicted `yes`) have a 65% chance of subscribing, and the remaining clients (predicted `no`) have a 10% chance. This demonstrates how strong a predictor `poutcome` is, as well as when random forests are a good tool.
 
 ```{r}
 #| cache: true
@@ -219,7 +243,9 @@ rbind(tree_final_fit |> collect_metrics(),
   select(Model, everything())
 ```
 
-Random forest is winner.
+Interestingly, both models have the same test accuracy of 89.3%. So accuracy on its own couldn't differentiate the models. However, the random forest has a lower test log loss than the tree (0.307 < 0.331). So the random forest gives better probabilities, and therefore, is the overall winner.
+
+Finally, we fit our winning random forest (`mtry` = 2) to the entire data set of 45,211 clients. This is the model our API uses.
 
 ```{r}
 #| cache: true
@@ -229,3 +255,7 @@ bank_final_model <- rf_final_wkf |>
   fit(bank)
 bank_final_model
 ```
+
+## Conclusion
+
+The goal was to predict whether a new bank client subscribes to a term deposit. To achieve this, we fit a classification tree and a random forest. We tuned each with 5-fold cross-validation and compared them on a test set using log loss. The random forest with `mtry` = 2 performed best, and so it was chosen as the model behind our API's predictions.
