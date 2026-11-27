@@ -7,6 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Ryan Clark">
+<meta name="dcterms.date" content="2026-12-03">
 
 <title>ST 558 Final Project</title>
 <style>
@@ -136,15 +137,46 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           </div>
   </div>
     
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">December 3, 2026</p>
+    </div>
+  </div>
   
     
   </div>
   
+<div>
+  <div class="abstract">
+    <div class="block-title">Abstract</div>
+    <p>The purpose of this report is to fit and compare classification tree and random forest models that predict whether a bank client subscribes to a term deposit, then select the best model for use in an API.</p>
+  </div>
+</div>
 
 
 </header>
 
 
+<section id="introduction" class="level2">
+<h2 class="anchored" data-anchor-id="introduction">Introduction</h2>
+<p>In this project we build on our exploratory analysis from Project 2 of the ‘Banking Dataset - Marketing Targets’ from Kaggle. The data come from a Portuguese bank’s marketing campaign, in which clients were called and offered a term deposit. We define our response variable as <code>y</code>, which is whether the client subscribed to the term deposit (<code>yes</code> or <code>no</code>). Since <code>y</code> is categorical, this is a classification problem.</p>
+<p>Our goal is to predict whether a client will subscribe. Using the tidymodels framework, we fit a classification tree and a random forest. Each model is tuned with 5-fold cross-validation on a training set. We then compare the best version of each on a test set, and fit the winner to the entire data set. The API uses this final model to make predictions.</p>
+<p>We use six predictors; three numeric and three categorical. These are the following:</p>
+<ul>
+<li><code>age</code>: client’s age (years)</li>
+<li><code>balance</code>: client’s average yearly account balance (euros)</li>
+<li><code>campaign</code>: the number of contacts made with the client during this campaign</li>
+<li><code>housing</code>: if the client has a housing loan</li>
+<li><code>contact</code>: method of contact (<code>cellular</code>, <code>telephone</code>, or <code>unknown</code>)</li>
+<li><code>poutcome</code>: prior outcome of previous campaign (<code>success</code>, <code>failure</code>, <code>other</code>, or <code>unknown</code>)</li>
+</ul>
+<p>These predictors were chosen because they describe the client and their history with the bank, as well as findings from Project 2. Clients who were contacted in a previous campaign were more likely to subscribe, and subscribers tended to have higher balances and fewer contacts.</p>
+<p>We do not include <code>duration</code>, or the length of the last call. While <code>duration</code> was strongly related to subscription in Project 2, this information doesn’t aid in prediction because it’s only known after the fact. We also exclude <code>month</code>, or the month of the last contact. Despite observing monthly patterns in Project 2, there are many potential confounding variables not analyzed that could inhibit future predictions.</p>
+</section>
+<section id="data" class="level2">
+<h2 class="anchored" data-anchor-id="data">Data</h2>
+<p>We begin by reading in the data. In Project 2 we found that <code>test.csv</code> was a duplicate subset of <code>train.csv</code>, so here we use only <code>train.csv</code>, which contains all 45,211 unique clients. We keep only our response and six chosen predictors, and convert the character columns to factors so the models treat them as categories.</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(tidyverse)</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(tidymodels)</span>
@@ -183,7 +215,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 2 yes    5289  11.7</code></pre>
 </div>
 </div>
-<p>Response is not balanced. Relevant for choosing metric and splitting data.</p>
+<p>The response is not balanced because only 11.7% of clients subscribed. This affects two of our choices: how we split the data and which metric to compare models.</p>
+</section>
+<section id="splitting-the-data" class="level2">
+<h2 class="anchored" data-anchor-id="splitting-the-data">Splitting the Data</h2>
+<p>We split the data into a training set (70%) and a test set (30%). We stratify on <code>y</code> so that both sets have roughly the same 11.7% subscription rate. Then we divide the training set into 5 folds for cross-validation, which we use to tune each model. The test set is sidelined until we compare our final models.</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Split data 70/30, keeping same proportion of "yes" in each set</span></span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">558</span>)</span>
@@ -198,6 +234,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># 5 CV folds from training data</span></span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>bank_folds <span class="ot">&lt;-</span> <span class="fu">vfold_cv</span>(bank_train, <span class="at">v =</span> <span class="dv">5</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
+<p>The recipe: <code>y</code> is the response, the six variables are predictors.</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Recipe: y predicted by all 6 predictors</span></span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>bank_rec <span class="ot">&lt;-</span> <span class="fu">recipe</span>(y <span class="sc">~</span> ., <span class="at">data =</span> bank_train)</span>
@@ -222,11 +259,22 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 predictor: 6</code></pre>
 </div>
 </div>
+</section>
+<section id="choosing-a-metric" class="level2">
+<h2 class="anchored" data-anchor-id="choosing-a-metric">Choosing a Metric</h2>
+<p>Log loss is our chosen metric for selecting models. Since our response is imbalanced, accuracy on its own can be misleading because a model that predicts “no” for every client is about 88% accurate without being useful. Log loss evaluates the predicted probabilities rather than just the predicted class. It rewards a model for giving a high probability to the outcome that actually happened, and penalizes a model that is confidently wrong. Lower log loss is desirable. In this case, a useful model should do better than giving every client the same 11.7% chance of subscribing, which ignores the predictors. We also report accuracy because it is easy to interpret, but we don’t use it to choose models.</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Metrics to evaluate models: log loss and accuracy</span></span>
 <span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>bank_metrics <span class="ot">&lt;-</span> <span class="fu">metric_set</span>(mn_log_loss, accuracy)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
-<p><code>cost_complexity</code> controls how much the tree gets pruned. It penalizes trees for having more leaves.</p>
+</section>
+<section id="classification-tree" class="level2">
+<h2 class="anchored" data-anchor-id="classification-tree">Classification Tree</h2>
+<p>A classification tree predicts a categorical response by dividing the predictor space into regions and making the same prediction for every observation in a region. The tree is built from the top down. At each step, it searches across every predictor and every possible split point (e.g., <code>age &lt; 35</code>) and chooses the single split that best separates the classes. It then repeats this process within each of the two resulting groups, and so on (i.e.&nbsp;recursive binary splitting). Each split doesn’t consider future splits. The best split makes each group as close to one class as possible (measured with the Gini index).</p>
+<p>The final groups are called terminal nodes, or leaves. We make a prediction for a new client by using their information to trace splits down the tree until hitting a leaf. The new client’s predicted probability of subscribing is the proportion of training clients in that leaf who also subscribed. The predicted class is the majority class in the leaf.</p>
+<p>A potential pitfall of this method is to split too much and fit the training data too well. This is a problem because it will be fitting noise and end up with worse predictive power for new data. To prevent this, we grow a large tree and then prune it back using the <code>cost_complexity</code> parameter. This parameter adds a penalty for each additional leaf, so a split is only kept if it improves the fit by enough to make up for the extra complexity. Small values allow large, complex trees, while large values produce small, simple trees. Thus, <code>cost_complexity</code> is used as a tuning parameter to inform us about how much pruning is best for our classification tree.</p>
+<p>There are many advantages to consider with classification trees. They excel in visualizing the process, handling numeric and categorical predictors, and automatically accounting for predictor interactions. Their main limitation is high variance. A small change in the data can lead to a very different tree, which can hurt prediction.</p>
+<p>We now set up our tree using <code>cost_complexity</code> for tuning and combine it with our recipe in a workflow. For the grid, we try 10 values of <code>cost_complexity</code> that are spread evenly on a log scale (very little pruning to heavy pruning).</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Classification tree model; only tune cost-complexity parameter</span></span>
 <span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>tree_mod <span class="ot">&lt;-</span> <span class="fu">decision_tree</span>(<span class="at">cost_complexity =</span> <span class="fu">tune</span>()) <span class="sc">|&gt;</span></span>
@@ -269,6 +317,7 @@ predictor: 6</code></pre>
 10    0.00001      mn_log_loss binary     0.392     5 0.00439 pre0_mod06_post0</code></pre>
 </div>
 </div>
+<p>We fit the tree at each of the 10 <code>cost_complexity</code> values on all 5 folds then average the log loss across folds. The table lists the values from best to worst.</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Best cost_complexity value by log loss</span></span>
 <span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>tree_best_params <span class="ot">&lt;-</span> <span class="fu">select_best</span>(tree_fits, <span class="at">metric =</span> <span class="st">"mn_log_loss"</span>)</span>
@@ -283,7 +332,16 @@ predictor: 6</code></pre>
 <span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>tree_final_wkf <span class="ot">&lt;-</span> tree_wkf <span class="sc">|&gt;</span></span>
 <span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">finalize_workflow</span>(tree_best_params)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
-<p>Random Forest</p>
+<p>We see that the best value is a <code>cost_complexity</code> of 0.01, with a cross-validation log loss of about 0.334. This is better than giving every client the same 11.7% chance, so the tree is making use of the predictors. Using this value in our workflow with <code>finalize_workflow()</code> provides the best classification tree.</p>
+</section>
+<section id="random-forest" class="level2">
+<h2 class="anchored" data-anchor-id="random-forest">Random Forest</h2>
+<p>We noted above that a single tree has high variance. One way to reduce variance is to fit many trees and average them. Since we only have one data set, we create new ones by bootstrapping. This means resampling the training data with replacement. We grow a tree on each bootstrap sample without pruning and average the predictions across all trees. Then for a new client, the predicted probability of subscribing is the average probability. This is called bagging (bootstrap aggregation). While individual trees may overfit, averaging removes much of that noise. This is also why we don’t prune here, as pruning would make each tree simpler but less able to capture real patterns.</p>
+<p>Bagging is not without limitations. If one predictor is much stronger than the others, trees will tend to use it for their first split. This can start to make the trees look similar. And averaging similar trees doesn’t combat the variance problem. This is where a random forest comes in.</p>
+<p>A random forest forces a tree to use a random subset (of size <code>mtry</code>) of predictors at each split. With enough randomizations, this prevents the strong predictor from always being used for the first split because it will often be randomly removed from the subset. Therefore, this forces trees into situations where they must use other predictors, resulting in more different splits that we can then average to reduce variance further.</p>
+<p>However, there are tradeoffs associated with the choice of <code>mtry</code>. Small values mean smaller subsets to choose from, which produce very different trees. This helps averaging but extremely small values may force overutilization of useless predictors. Large values mean bigger subsets to choose from, which produce stronger, more similar trees. Eventually too large of <code>mtry</code> leads us back to the problem of bagging. We use cross-validation to find the best balance.</p>
+<p>Overall, a random forest usually predicts better than a single tree because it reduces variance. The cost is interpretability: the prediction comes from averaging hundreds of trees, so there is no single tree we can draw to explain the model.</p>
+<p>Thus, we design our random forest using <code>mtry</code> for tuning, merging it with our recipe in a workflow. Considering that we only have 6 predictors, our grid explores every possible value of <code>mtry</code> from 1 to 6.</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Random forest model; tune mtry</span></span>
 <span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>rf_mod <span class="ot">&lt;-</span> <span class="fu">rand_forest</span>(<span class="at">mtry =</span> <span class="fu">tune</span>()) <span class="sc">|&gt;</span></span>
@@ -335,6 +393,7 @@ predictor: 6</code></pre>
 6     6 mn_log_loss binary     0.377     5 0.00381 pre0_mod6_post0</code></pre>
 </div>
 </div>
+<p>We fit the random forest at each <code>mtry</code> value on all 5 folds.</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Best mtry value by log loss</span></span>
 <span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>rf_best_params <span class="ot">&lt;-</span> <span class="fu">select_best</span>(rf_fits, <span class="at">metric =</span> <span class="st">"mn_log_loss"</span>)</span>
@@ -349,9 +408,14 @@ predictor: 6</code></pre>
 <span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>rf_final_wkf <span class="ot">&lt;-</span> rf_wkf <span class="sc">|&gt;</span></span>
 <span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">finalize_workflow</span>(rf_best_params)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
-<p>Best is mtry = 2 with log loss approximately 0.311, which surpasses baseline and best tree.</p>
+<p>The best value is an <code>mtry</code> of 2, with a cross-validation log loss of roughly 0.311. This surpasses the best classification tree (which was 0.334). It’s also interesting that <code>mtry</code> = 6 (i.e., bagging) performs the worst (log loss of 0.377). This is likely because <code>poutcome</code> is such a strong predictor that it forces the trees to resemble each other, illustrating the bagging limitation we discussed earlier.</p>
+<p>Thus, limiting each split to 2 random predictors gives us more varied trees and better probabilities, so we fix <code>mtry</code> at 2 to our <code>finalize_workflow()</code>.</p>
+</section>
+<section id="final-model-selection" class="level2">
+<h2 class="anchored" data-anchor-id="final-model-selection">Final Model Selection</h2>
+<p>We now have our best classification tree and our best random forest. Using <code>last_fit()</code>, we fit each model to the entire training set and evaluate it on the test set. Recall that neither model has seen the test set yet.</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Fit best tree to full training set, evaluate on test set</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Fit best tree to full training set and evaluate on test set</span></span>
 <span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>tree_final_fit <span class="ot">&lt;-</span> tree_final_wkf <span class="sc">|&gt;</span></span>
 <span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">last_fit</span>(bank_split, <span class="at">metrics =</span> bank_metrics)</span>
 <span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a>tree_final_fit <span class="sc">|&gt;</span></span>
@@ -364,8 +428,9 @@ predictor: 6</code></pre>
 2 mn_log_loss binary         0.331 pre0_mod0_post0</code></pre>
 </div>
 </div>
+<p>On the test set, the tree has a log loss of about 0.331 and accuracy of about 89.3%.</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Plot the final tree</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Plot final tree</span></span>
 <span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>tree_final_fit <span class="sc">|&gt;</span></span>
 <span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">extract_workflow</span>() <span class="sc">|&gt;</span></span>
 <span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">extract_fit_engine</span>() <span class="sc">|&gt;</span></span>
@@ -378,8 +443,9 @@ predictor: 6</code></pre>
 </div>
 </div>
 </div>
+<p>Pruning reduces our tree to one split: <code>poutcome</code>. It shows that clients whose previous campaign was a success (predicted <code>yes</code>) have a 65% chance of subscribing, and the remaining clients (predicted <code>no</code>) have a 10% chance. This demonstrates how strong a predictor <code>poutcome</code> is, as well as when random forests are a good tool.</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Fit best random forest to full training set, evaluate on test set</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Fit best random forest to full training set and evaluate on test set</span></span>
 <span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">558</span>)</span>
 <span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>rf_final_fit <span class="ot">&lt;-</span> rf_final_wkf <span class="sc">|&gt;</span></span>
 <span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">last_fit</span>(bank_split, <span class="at">metrics =</span> bank_metrics)</span>
@@ -394,7 +460,7 @@ predictor: 6</code></pre>
 </div>
 </div>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Compare both models on the test set</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Compare both models on test set</span></span>
 <span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a><span class="fu">rbind</span>(tree_final_fit <span class="sc">|&gt;</span> <span class="fu">collect_metrics</span>(),</span>
 <span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a>      rf_final_fit <span class="sc">|&gt;</span> <span class="fu">collect_metrics</span>()) <span class="sc">|&gt;</span></span>
 <span id="cb34-4"><a href="#cb34-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">Model =</span> <span class="fu">c</span>(<span class="st">"Tree"</span>, <span class="st">"Tree"</span>, <span class="st">"Random Forest"</span>, <span class="st">"Random Forest"</span>)) <span class="sc">|&gt;</span></span>
@@ -409,8 +475,10 @@ predictor: 6</code></pre>
 4 Random Forest mn_log_loss binary         0.307 pre0_mod0_post0</code></pre>
 </div>
 </div>
+<p>Interestingly, both models have the same test accuracy of 89.3%. So accuracy on its own couldn’t differentiate the models. However, the random forest has a lower test log loss than the tree (0.307 &lt; 0.331). So the random forest gives better probabilities, and therefore, is the overall winner.</p>
+<p>Finally, we fit our winning random forest (<code>mtry</code> = 2) to the entire data set of 45,211 clients. This is the model our API uses.</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Fit the winning model (random forest) to the entire data set</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Fit random forest to the entire data set</span></span>
 <span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">558</span>)</span>
 <span id="cb36-3"><a href="#cb36-3" aria-hidden="true" tabindex="-1"></a>bank_final_model <span class="ot">&lt;-</span> rf_final_wkf <span class="sc">|&gt;</span></span>
 <span id="cb36-4"><a href="#cb36-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">fit</span>(bank)</span>
@@ -440,8 +508,13 @@ Splitrule:                        gini
 OOB prediction error (Brier s.):  0.08828578 </code></pre>
 </div>
 </div>
+</section>
+<section id="conclusion" class="level2">
+<h2 class="anchored" data-anchor-id="conclusion">Conclusion</h2>
+<p>The goal was to predict whether a new bank client subscribes to a term deposit. To achieve this, we fit a classification tree and a random forest. We tuned each with 5-fold cross-validation and compared them on a test set using log loss. The random forest with <code>mtry</code> = 2 performed best, and so it was chosen as the model behind our API’s predictions.</p>
 
 
+</section>
 
 </main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">
