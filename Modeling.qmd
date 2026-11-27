@@ -48,7 +48,11 @@ bank |>
   mutate(pct = round(100 * n / sum(n), 1))
 ```
 
-Response is not balanced. Relevant for choosing metric and splitting data.
+The response is not balanced because only 11.7% of clients subscribed. This affects two of our choices: how we split the data and which metric to compare models.
+
+## Splitting the Data
+
+We split the data into a training set (70%) and a test set (30%). We stratify on `y` so that both sets have roughly the same 11.7% subscription rate. Then we divide the training set into 5 folds for cross-validation, which we use to tune each model. The test set is sidelined until we compare our final models.
 
 ```{r}
 # Split data 70/30, keeping same proportion of "yes" in each set
@@ -62,18 +66,34 @@ bank_split
 bank_folds <- vfold_cv(bank_train, v = 5)
 ```
 
+The recipe: `y` is the response, the six variables are predictors. 
+
 ```{r}
 # Recipe: y predicted by all 6 predictors
 bank_rec <- recipe(y ~ ., data = bank_train)
 bank_rec
 ```
 
+## Choosing a Metric
+
+Log loss is our chosen metric for selecting models. Since our response is imbalanced, accuracy on its own can be misleading because a model that predicts "no" for every client is about 88% accurate without being useful. Log loss evaluates the predicted probabilities rather than just the predicted class. It rewards a model for giving a high probability to the outcome that actually happened, and penalizes a model that is confidently wrong. Lower log loss is desirable. In this case, a useful model should do better than giving every client the same 11.7% chance of subscribing, which ignores the predictors. We also report accuracy because it is easy to interpret, but we don't use it to choose models.
+
 ```{r}
 # Metrics to evaluate models: log loss and accuracy
 bank_metrics <- metric_set(mn_log_loss, accuracy)
 ```
 
-`cost_complexity` controls how much the tree gets pruned. It penalizes trees for having more leaves.  
+## Classification Tree
+
+A classification tree predicts a categorical response by dividing the predictor space into regions and making the same prediction for every observation in a region. The tree is built from the top down. At each step, it searches across every predictor and every possible split point (e.g., `age < 35`) and chooses the single split that best separates the classes. It then repeats this process within each of the two resulting groups, and so on (i.e. recursive binary splitting). Each split doesn't consider future splits. The best split makes each group as close to one class as possible (measured with the Gini index).
+
+The final groups are called terminal nodes, or leaves. We make a prediction for a new client by using their information to trace splits down the tree until hitting a leaf. The new client's predicted probability of subscribing is the proportion of training clients in that leaf who also subscribed. The predicted class is the majority class in the leaf.
+
+A potential pitfall of this method is to split too much and fit the training data too well. This is a problem because it will be fitting noise and end up with worse predictive power for new data. To prevent this, we grow a large tree and then prune it back using the `cost_complexity` parameter. This parameter adds a penalty for each additional leaf, so a split is only kept if it improves the fit by enough to make up for the extra complexity. Small values allow large, complex trees, while large values produce small, simple trees. Thus, `cost_complexity` is used as a tuning parameter to inform us about how much pruning is best for our classification tree.
+
+There are many advantages to consider with classification trees. They excel in visualizing the process, handling numeric and categorical predictors, and automatically accounting for predictor interactions. Their main limitation is high variance. A small change in the data can lead to a very different tree, which can hurt prediction.
+
+We now set up our tree using `cost_complexity` for tuning and combine it with our recipe in a workflow. For the grid, we try 10 values of `cost_complexity` that are spread evenly on a log scale (very little pruning to heavy pruning).
 
 ```{r}
 # Classification tree model; only tune cost-complexity parameter
@@ -105,6 +125,8 @@ tree_fits |>
   arrange(mean)
 ```
 
+We fit the tree at each of the 10 `cost_complexity` values on all 5 folds then average the log loss across folds. The table lists the values from best to worst.
+
 ```{r}
 # Best cost_complexity value by log loss
 tree_best_params <- select_best(tree_fits, metric = "mn_log_loss")
@@ -115,7 +137,8 @@ tree_final_wkf <- tree_wkf |>
   finalize_workflow(tree_best_params)
 ```
 
-Random Forest
+We see that the best value is a `cost_complexity` of 0.01, with a cross-validation log loss of about 0.334. This is better than giving every client the same 11.7% chance, so the tree is making use of the predictors. Using this value in our workflow with `finalize_workflow()` provides our best classification tree.
+
 
 ```{r}
 # Random forest model; tune mtry
